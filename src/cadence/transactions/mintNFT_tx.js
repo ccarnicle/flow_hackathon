@@ -1,52 +1,98 @@
-export const mintNFT = 
+ export const mintNFT = 
 `
 // REPLACE THIS WITH YOUR CONTRACT NAME + ADDRESS
-import aiSportsMinter from 0xae8a08406366559e 
+import aiSportsMinter from 0xc03bdc0fd49acfed 
 
 // Do not change these
 import NonFungibleToken from 0x631e88ae7f1d7c20
 import MetadataViews from 0x631e88ae7f1d7c20
+import FungibleToken from 0x9a0766d93b6608b7
+
+/// This script uses the NFTMinter resource to mint a new NFT
+/// It must be run with the account that has the minter resource
+/// stored in /storage/NFTMinter
 
 transaction(
-  recipient: Address,
-  name: String,
-  description: String,
-  thumbnail: String,
+    recipient: Address,
+    name: String,
+    description: String,
+    thumbnail: String,
+    cuts: [UFix64],
+    royaltyDescriptions: [String],
+    royaltyBeneficiaries: [Address],
+    status: String, 
+    juice: UInt64, 
+    player: String, 
+    landscape: String, 
 ) {
-  prepare(signer: AuthAccount) {
-    if signer.borrow<&aiSportsMinter.Collection>(from: aiSportsMinter.CollectionStoragePath) != nil {
-      return
+
+    /// local variable for storing the minter reference
+    let minter: &aiSportsMinter.NFTMinter
+
+    /// Reference to the receiver's collection
+    let recipientCollectionRef: &{NonFungibleToken.CollectionPublic}
+
+    /// Previous NFT ID before the transaction executes
+    let mintingIDBefore: UInt64
+
+    prepare(signer: AuthAccount) {
+        self.mintingIDBefore = aiSportsMinter.totalSupply
+
+        // borrow a reference to the NFTMinter resource in storage
+        self.minter = signer.borrow<&aiSportsMinter.NFTMinter>(from: aiSportsMinter.MinterStoragePath)
+            ?? panic("Account does not store an object at the specified path")
+
+        // Borrow the recipient's public NFT collection reference
+        self.recipientCollectionRef = getAccount(recipient)
+            .getCapability(aiSportsMinter.CollectionPublicPath)
+            .borrow<&{NonFungibleToken.CollectionPublic}>()
+            ?? panic("Could not get receiver reference to the NFT Collection")
     }
 
-    // Create a new empty collection
-    let collection <- aiSportsMinter.createEmptyCollection()
+    pre {
+        cuts.length == royaltyDescriptions.length && cuts.length == royaltyBeneficiaries.length: "Array length should be equal for royalty related details"
+    }
 
-    // save it to the account
-    signer.save(<-collection, to: aiSportsMinter.CollectionStoragePath)
+    execute {
 
-    // create a public capability for the collection
-    signer.link<&{NonFungibleToken.CollectionPublic, MetadataViews.ResolverCollection}>(
-      aiSportsMinter.CollectionPublicPath,
-      target: aiSportsMinter.CollectionStoragePath
-    )
-  }
+        // Create the royalty details
+        var count = 0
+        var royalties: [MetadataViews.Royalty] = []
+        while royaltyBeneficiaries.length > count {
+            let beneficiary = royaltyBeneficiaries[count]
+            let beneficiaryCapability = getAccount(beneficiary)
+            .getCapability<&{FungibleToken.Receiver}>(MetadataViews.getRoyaltyReceiverPublicPath())
 
-  execute {
-    // Borrow the recipient's public NFT collection reference
-    let receiver = getAccount(recipient)
-      .getCapability(aiSportsMinter.CollectionPublicPath)
-      .borrow<&{NonFungibleToken.CollectionPublic}>()
-      ?? panic("Could not get receiver reference to the NFT Collection")
+            // Make sure the royalty capability is valid before minting the NFT
+            if !beneficiaryCapability.check() { panic("Beneficiary capability is not valid!") }
 
-    // Mint the NFT and deposit it to the recipient's collection
-    aiSportsMinter.mintNFT(
-      recipient: receiver,
-      name: name,
-      description: description,
-      thumbnail: thumbnail,
-    )
-    
-    log("Minted an NFT and stored it into the collection")
-  } 
+            royalties.append(
+                MetadataViews.Royalty(
+                    receiver: beneficiaryCapability,
+                    cut: cuts[count],
+                    description: royaltyDescriptions[count]
+                )
+            )
+            count = count + 1
+        }
+
+        // Mint the NFT and deposit it to the recipient's collection
+        self.minter.mintNFT(
+            recipient: self.recipientCollectionRef,
+            name: name,
+            description: description,
+            thumbnail: thumbnail,
+            royalties: royalties,
+            status: status,
+            juice: juice,
+            player: player,
+            landscape: landscape
+        )
+    }
+
+    post {
+        self.recipientCollectionRef.getIDs().contains(self.mintingIDBefore): "The next NFT ID should have been minted and delivered"
+        aiSportsMinter.totalSupply == self.mintingIDBefore + 1: "The total supply should have been increased by 1"
+    }
 }
 `
