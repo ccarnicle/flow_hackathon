@@ -3,7 +3,7 @@ import { SHA3 } from "sha3";
 import { ec as EC } from "elliptic";
 import { Buffer } from 'buffer';
 
-const PRIVATE_KEY="7726ed753120dc0bee71b93a74f67f6f2ace061636e4ca42440b21fb2fa18332"
+const PRIVATE_KEY=process.env.FLOW_TESTNET_PRIVATE_KEY
 const CONTRACT_ADDRESS ="0xc03bdc0fd49acfed"
 
 var ec = new EC('p256');
