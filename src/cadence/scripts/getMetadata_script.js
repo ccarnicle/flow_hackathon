@@ -12,8 +12,15 @@ pub fun main(address: Address, id: UInt64): NFTResult {
       ?? panic("Could not borrow a reference to the collection")
 
   let nft = collection.borrowViewResolver(id: id)
+  //let nft = collection.borrowAiSportsMinter(id: id)!
 
-  var data = NFTResult()
+  let view = nft.resolveView(Type<MetadataViews.Traits>())
+  //let traits = MetadataViews.getTraits(nft)!
+  let traits = view as! MetadataViews.Traits?
+
+  var data = NFTResult(traits: traits)
+
+  data.traits = traits
 
   // Get the basic display information for this NFT
   if let view = nft.resolveView(Type<MetadataViews.Display>()) {
@@ -38,13 +45,18 @@ pub struct NFTResult {
   pub(set) var thumbnail: String
   pub(set) var owner: Address
   pub(set) var type: String
+  pub(set) var traits: MetadataViews.Traits?
 
-  init() {
+  init(
+    traits: MetadataViews.Traits?,
+  ) {
     self.name = ""
     self.description = ""
     self.thumbnail = ""
     self.owner = 0x0
     self.type = ""
+    self.traits = traits
+
   }
 }
 `
